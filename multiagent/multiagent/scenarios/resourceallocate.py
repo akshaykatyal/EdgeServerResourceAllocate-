@@ -8,45 +8,45 @@ import math
 #dic1= '/Users/aditykatyal/download/GitHub/IOV_DATA/IOV_DATA/'
 #bus data rio
 #creating groups of vehicles as in the paper
-l_a = 5 # packets/ms, lower-bound of arriving rate of vehicles of G1
-l_b = 50 #upper bound of packets for Group1
+l_a = 10 # packets/ms, lower-bound of arriving rate of vehicles of G1
+l_b = 30 #upper bound of packets for Group1
 l_a_r = 100 # packets/ms of edge server
 l_b_r = 200# packets of Q size
 remote_delay_max = 8 #ms
 Qlength = 200
 #transmission delay for teh edge server
-Tdelay=l_a/l_a_r
+#Tdelay=l_a/l_a_r
 
 #creating a class for scenario
 class Scenario(BaseScenario):
-#function to make world
+    #function to make world
     def make_world(self, arglist, groupnum = None):
         world = World()
         world.collaborative = True
         # adding agenets to world
         world.agents = [Agent() for i in range(world.agent_num )]
-#random position of the agents
+        #random position of the agents
         position = (np.array([(38, 29),(40, 70),(56, 34),(72.4, 73.3)])/(100/world.region_W))
         for i, agent in enumerate(world.agents):
             agent.id = i
             agent.name = 'id of agent %d' % i
             # position of agents
             agent.pos = tuple(position[i])
-#set the edge serve rate in the world
+        #set the edge serve rate in the world
         world.set_server_rate()
-#set the crossover between the groups
+        #set the crossover between the groups
         world.get_crossover()
-#set the action dimentions for agent in world
+        #set the action dimentions for agent in world
         world.set_action_dim()
-        
+
         world.set_topo(arglist.MATRIX_TOPOLOGY_dir)
-        
-#getting delays in the world
+
+        #getting delays in the world
         self.get_delay_group(world)
         # get delay of cross group between agents, when vehcle cross the groups
         self.get_cross_group_delay(world)
         self.Process_delay(world)
-        
+
         # make initial conditions
         self.reset_world(world, -1, 0, arglist)
         for agent in world.agents:
@@ -63,7 +63,7 @@ class Scenario(BaseScenario):
         self.Step_observation = arglist.Step_observation
         self.reward_maddpg = arglist.reward_maddpg
         return world
-#Function to reset the environment world
+    #Function to reset the environment world
     def reset_world(self, world, train_step, step, arglist, IF_test=False, TEST_V=None):
         # load of each block in region_H * region_W
         if train_step > - 1:
@@ -82,20 +82,20 @@ class Scenario(BaseScenario):
             load_agent = []
             all_group_agent = agent.group
             for i in range(len(all_group_agent)):
-                 load = world.load_group[all_group_agent[i]]
-                 load_agent.append(load)
+                load = world.load_group[all_group_agent[i]]
+                load_agent.append(load)
             #get load of agent in all its coverage groups
             agent.state.load = load_agent
-            
+
             # get load of cross group
             list_value = world.mul_group_c.get(agent.id)[0]
             agent_value_num = len(list_value)
             agent_load =[]
             for i in range(agent_value_num):
                 load = world.load_group[list_value[i]]
-                agent_load.append(load)            
+                agent_load.append(load)
             agent.state.c_load = agent_load
-            
+
             diff_agent_load = []
             # get load of fix group
             diff_value = sorted(list(set(agent.group).difference(set(list_value))))
@@ -104,17 +104,17 @@ class Scenario(BaseScenario):
                 diff_agent_load.append(load)
 
             agent.state.fix_load = sum(diff_agent_load)
-         # getting latency from the agent
+        # getting latency from the agent
         self.propagation_distance_based_delay(world)
         # get delay of each group based on centalised controller
         world.centralized_Delay = self.get_delay_centralized(world)
 
-#function for propagation distance based delay
+    #function for propagation distance based delay
     def propagation_distance_based_delay(self, world):
         Q_delay_fix= self.get_latency_server_fix(world, np.array(self.service_rate))
         delay_in_group_fix = self.get_latency_group(world, Q_delay_fix, world.distance_assign_matrix)
         delay_agent_fix = np.zeros(world.agent_num)
-        for i, agent in  enumerate(world.agents):  
+        for i, agent in  enumerate(world.agents):
             load_agent = world.agent_group_cover[i,:,:]*world.load_group
             if np.sum(load_agent) <=0:
                 delay_agent_fix[i] =0
@@ -130,11 +130,11 @@ class Scenario(BaseScenario):
             Q_delay_one_agent = self.delay_Queue_inf(load_c, np.sum(np.array(self.service_rate)), fix_load_server=0)
         else:
             Q_delay_one_agent = self.delay_Queue(load_c, np.sum(np.array(self.service_rate)), world.agent_num*Qlength, fix_load_server=0)
-        n = len(world.vehicles)/1500
+        n = len(world.vehicles)/1200
         delay_group_centralzed_agent = max(2,min(remote_delay_max, n*remote_delay_max)) + Q_delay_one_agent + 1.3
 
         return delay_group_centralzed_agent
-    
+
     def reward(self, world, learning_type = 'maddpg'):
 
         changed_num_vehicle = np.zeros(world.agent_num)
@@ -142,9 +142,9 @@ class Scenario(BaseScenario):
         Q_delay=np.zeros(world.agent_num)
         hand_over = np.zeros(world.agent_num)
 
-        for i, agent in  enumerate(world.agents):         
+        for i, agent in  enumerate(world.agents):
             Q_delay[i]= self.get_latency_one_agent(agent, world, np.array(self.service_rate[i]))
-            
+
             a = world.all_con_group.copy()
 
             b = world.last_all_con_group.copy()
@@ -160,7 +160,7 @@ class Scenario(BaseScenario):
             changed_num_vehicle[i] = sum(sum(changed_group*world.vehicle_num))
 
             x = np.argwhere(changed_group ==1)
-        
+
             # considered the change group and handover cost
             if np.size(x)==0:
                 hand_over[i]=0
@@ -170,8 +170,8 @@ class Scenario(BaseScenario):
         delay_in_group = self.get_latency_group(world, Q_delay, world.all_con_group)
         Changed_percentage_all = np.sum(changed_num_vehicle)/sum(sum(world.vehicle_num))
         delay_agent = np.zeros(world.agent_num)
-#
-        for i, agent in  enumerate(world.agents):  
+        #
+        for i, agent in  enumerate(world.agents):
             load_agent = world.agent_group_cover[i,:,:]*world.load_group
             if np.sum(load_agent) <=0:
                 delay_agent[i] =0
@@ -181,16 +181,20 @@ class Scenario(BaseScenario):
                 delay_agent[i]=np.max(world.agent_group_cover[i,:,:]*delay_in_group)
 
         if self.Handover:
-            reward_real =  (- np.max(delay_in_group) - np.sum(changed_group_num)/world.cross_group_num)/50
-#
+            reward_real =  (- np.max(delay_in_group) - np.sum(changed_group_num)/world.cross_group_num)/30
+        #
         else:
-            reward_real =  - np.max(delay_in_group)/50#
+            reward_real =  - np.max(delay_in_group)/30
         if learning_type == 'maddpg':
-            reward = - delay_agent/50 +Tdelay
+            pdelay=self.Process_delay(world)
+            tdelay=self.Transmssion_delay(world)
+            reward = - delay_agent/30 + pdelay/30 + tdelay/30
         elif self.reward_maddpg:
             reward = reward_real
-        else:   
-            reward =  - delay_agent/50+Tdelay
+        else:
+            pdelay=self.Process_delay(world)
+            tdelay=self.Transmssion_delay(world)
+            reward =  - delay_agent/30 + pdelay/30 + tdelay/30
 
 
         world.delay_ma = delay_agent
@@ -200,12 +204,12 @@ class Scenario(BaseScenario):
     def get_latency_group(self, world, Q_delay, agent):
         delay_in_group = np.zeros([world.region_W, world.region_H])
         for x in range(world.region_W):
-            for y in range(world.region_H): 
+            for y in range(world.region_H):
                 if agent[x,y]>0:
                     i = int(agent[x,y])-1
                     delay_in_group[x,y] = Q_delay[i] + world.group_delay[i,x,y]
         return delay_in_group
-    
+
     def get_propagate_delay_all(self, world):
         latency_p=np.zeros([world.agent_num, world.num_v])
         for j, vehicle in enumerate(world.vehicles):
@@ -214,28 +218,32 @@ class Scenario(BaseScenario):
             a1 = np.array(world.path_delay_p)
             latency_p[:, j] = a1[:, min_dists]
             return latency_p
-          
-        
+
+
     def get_latency_one_agent(self, agent, world, service_rate):
         #  latency of agent based on Small group
-        
+
         agent_load_vector = agent.state.c_load * agent.state.v_manage
         load_all_cross = np.sum(agent_load_vector)
         #getting the value of q delay
         if self.Q_type == "inf":
             Q_delay = self.delay_Queue_inf(load_all_cross, service_rate, agent.state.fix_load)
-
+            pdelay=self.Process_delay(world)
+            tdelay=self.Transmssion_delay(world)
         else:
             Q_delay = self.delay_Queue(load_all_cross, service_rate, Qlength, agent.state.fix_load)
-        return Q_delay+Tdelay
-       
+            pdelay=self.Process_delay(world)
+            tdelay=self.Transmssion_delay(world)
+        return Q_delay+ pdelay+tdelay
+
+
 
     def get_latency_server_fix(self, world, service_rate):
         # latency of agent based on Small groups
         Q_delay = np.zeros(world.agent_num)
         for i, agent in  enumerate(world.agents):
             agent_load_vector = agent.state.c_load * agent.distance_manage
-            load_all_cross = np.sum(agent_load_vector) 
+            load_all_cross = np.sum(agent_load_vector)
 
             if self.Q_type == "inf":
                 Q_delay[i] = self.delay_Queue_inf(load_all_cross, service_rate[i], agent.state.fix_load)
@@ -243,7 +251,7 @@ class Scenario(BaseScenario):
                 Q_delay[i] = self.delay_Queue(load_all_cross, service_rate[i], Qlength, agent.state.fix_load)
         return Q_delay
 
-#function to get q delay
+    #function to get q delay
     def delay_Queue_inf(self, load_server, service_rate, fix_load_server=0):
 
         lamda = load_server+ fix_load_server
@@ -253,10 +261,10 @@ class Scenario(BaseScenario):
         if mu > lamda:
             delay = min(40, 1/(mu-lamda))
         else:
-            delay = 50
+            delay = 40
         return delay
 
-#function to get the value of q delay
+    #function to get the value of q delay
     def delay_Queue(self, load_server, service_rate, Qlength, fix_load_server=0):
 
         lamda = load_server+ fix_load_server
@@ -269,7 +277,7 @@ class Scenario(BaseScenario):
             for i, r in enumerate(rho):
                 if lamda[i] == 0:
                     d = 0
-                else: 
+                else:
                     if r == 1:
                         d = Qlen/mu+ (K-1)/(2*lamda[i])
                     else:
@@ -278,16 +286,16 @@ class Scenario(BaseScenario):
         else:
             if lamda == 0:
                 d = 0
-            else: 
+            else:
                 if rho == 1:
                     d = Qlen/mu+ (K-1)/(2*lamda)
                 else:
-                    d = (pow(rho,2)+K*pow(rho, K+2)-K*pow(rho,K+1)-pow(rho,K+2))/(lamda*(1-rho)*(1-pow(rho,K))) 
+                    d = (pow(rho,2)+K*pow(rho, K+2)-K*pow(rho,K+1)-pow(rho,K+2))/(lamda*(1-rho)*(1-pow(rho,K)))
             delay=d
-        return delay+Tdelay
+        return delay
 
 
-    def observation(self, agent, world, step):  
+    def observation(self, agent, world, step):
         load_group = list(map(lambda x:x/10, agent.state.c_load))
         obs = np.concatenate(([agent.state.fix_load/10], load_group), axis=0)
         if self.Step_observation:
@@ -297,12 +305,12 @@ class Scenario(BaseScenario):
         if self.Que_obs:
             obs =np.concatenate((obs,[agent.state.Q_delay/50] ), axis=0)
         return obs
-#generation of load for the servers by vehicle
+    #generation of load for the servers by vehicle
     def generate_vehicle(self, world):
         # number of vehicles
-        world.num_v = np.random.randint(50, high=70)
+        world.num_v = np.random.randint(50, high=120)
         # add vehicles
-        world.vehicles = [Vehicle() for i in range(world.num_v)]#        
+        world.vehicles = [Vehicle() for i in range(world.num_v)]#
         #vehicle location is in the coverage of agents
         select_group = np.random.randint(0,high=len(world.all_group), size = world.num_v)
         self.load = np.random.uniform(10, 20, size=world.num_v)
@@ -312,8 +320,8 @@ class Scenario(BaseScenario):
             #getting the position coordinates of vehicle
             vehicle.pos = (float(x+np.random.rand(1)),float(y+np.random.rand(1)))
             vehicle.load = self.load[i]/1000
-            
-   # get vehicle location from dataset
+
+    # get vehicle location from dataset
     def get_location_vehicle(self, world, train_step, step, dic):
         # episode by episode data also the data of dataset
         #group by group traffic
@@ -321,34 +329,34 @@ class Scenario(BaseScenario):
         if  k <10:
             name = '0'+str(k)
         else:
-            name = str(k) 
+            name = str(k)
         with open(dic+name+'_min_10km.json','r') as f:
             diction = json.load(fp=f)
         with open(dic+'edge.json','r') as f:
             edge_dic = json.load(fp=f)
-            
+
 
         location = diction[str(step)]
         # number of vehicles
         world.num_v = len(location)
         # adding vehicles to server
         world.vehicles = [Vehicle() for i in range(world.num_v)]
- #load for group 1
+        #load for group 1
         self.load = (np.array(location)[:,2]-10)*(l_b-l_a)/10+l_a
 
         world.load_group = np.zeros([world.region_W, world.region_H] )
         world.vehicle_num = np.zeros([world.region_W, world.region_H] )
-        
+
         for j, vehicle in enumerate(world.vehicles):
-             x = location[j][0]/(100/world.region_W)
-             y = location[j][1]/(100/world.region_H)
-             vehicle.pos = (x,y)
-             vehicle.load = self.load[j]/1000
-             world.load_group[int(x),int(y)] += vehicle.load
-             world.vehicle_num[int(x),int(y)]+=1
-           
-            
-    #load on the edge servers
+            x = location[j][0]/(100/world.region_W)
+            y = location[j][1]/(100/world.region_H)
+            vehicle.pos = (x,y)
+            vehicle.load = self.load[j]/1000
+            world.load_group[int(x),int(y)] += vehicle.load
+            world.vehicle_num[int(x),int(y)]+=1
+
+
+        #load on the edge servers
         for u in range(len(edge_dic)):
             x = edge_dic[u][0]/(100/world.region_W)
             y= edge_dic[u][1]/(100/world.region_H)
@@ -362,7 +370,7 @@ class Scenario(BaseScenario):
 
         vehicles = []
         for k in range(test_num):
-            num_v = np.random.randint(50, high=120) 
+            num_v = np.random.randint(50, high=120)
             select_group = np.random.randint(0, high=len(world.all_group), size = num_v)
             load = np.random.uniform(0, 5, size = num_v)
             vehicle = []
@@ -374,10 +382,10 @@ class Scenario(BaseScenario):
             vehicles.append(vehicle)
         return vehicles
 
-    
+
     def get_delay_group(self, world):
         world.group_delay = np.zeros([world.agent_num, world.region_W, world.region_H])
-        for i, agent in enumerate(world.agents): 
+        for i, agent in enumerate(world.agents):
             for x in range(world.region_W):
                 for y in range(world.region_H):
                     #gettingig llinear algerbra norm
@@ -389,10 +397,10 @@ class Scenario(BaseScenario):
                         dis =  np.linalg.norm([x,y] - np.array(agent.pos))/world.region_W*10
                         delay = (0.1 +dis*0.01/3)*2 + 1
                     world.group_delay[i, x, y] = delay
-                
+
     #get delay in crossing groups between edge server
     def get_cross_group_delay(self, world):
-        
+
         world.distance_assign_matrix = world.all_con_group.copy()
         for i, agent in enumerate(world.agents):
             a = np.array(agent.cross_group)
@@ -403,22 +411,50 @@ class Scenario(BaseScenario):
             agent_in_chardge = np.argmin(tmp, axis=0)
             dis_assi[np.where(agent_in_chardge==i)]=1
             agent.distance_manage = dis_assi
-            
+
         for x in range(world.region_W):
             for y in range(world.region_H):
                 id_ = np.argmin( world.group_delay[:,x,y], axis=0)
                 if world.distance_assign_matrix[x,y] !=0:
                     world.distance_assign_matrix[x,y] = id_+1
-                LB  = (x,y) 
+                LB  = (x,y)
                 for agent in world.agents:
                     distance = np.linalg.norm(np.array(agent.pos) - LB)
                     if distance <= agent.r:
-                       tmp = world.group_delay[:,x,y]
-                       world.agent_group_cover[agent.id,x,y] = 1
+                        tmp = world.group_delay[:,x,y]
+                        world.agent_group_cover[agent.id,x,y] = 1
     def Process_delay(self,world):
-       service_rate=10
-       delay=l_a/service_rate
+        service_rate=[]
+        for agent in world.agents:
+            #this is is
+            service_rate.append(agent.service_rate)
+        for agent in world.agents:
+            load_agent = []
+            all_group_agent = agent.group
+            for i in range(len(all_group_agent)):
+                load = world.load_group[all_group_agent[i]]
+                load_agent.append(load)
+            #get load of agent in all its coverage groups
+            agent.state.load = load_agent
+            for a in agent.state.load:
+                prodelay=a/10
+        return prodelay
+    def Transmssion_delay(self,world):
+        mu=10
+        for agent in world.agents:
+            load_agent = []
+            all_group_agent = agent.group
+            for i in range(len(all_group_agent)):
+                load = world.load_group[all_group_agent[i]]
+                load_agent.append(load)
+            #get load of agent in all its coverage groups
+            agent.state.load = load_agent
+            for a in agent.state.load:
+                tdelay=a/mu
 
-       return delay
+        return tdelay
+
+
+
 
 

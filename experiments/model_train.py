@@ -1,6 +1,6 @@
 #making all the necessary imports to run the trainner
-import sys 
-sys.path.append("..") 
+import sys
+sys.path.append("..")
 import argparse
 import numpy as np
 import tensorflow as tf
@@ -20,8 +20,8 @@ def parse_args():
     # Environment
     parser.add_argument("--scenario", type=str, default="resourceallocate", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=2, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=2500, help="number of episodes")
-    parser.add_argument("--step-num", type=int, default=8, help="number of time steps in one slot")
+    parser.add_argument("--num-episodes", type=int, default=1500, help="number of episodes")
+    parser.add_argument("--step-num", type=int, default=48, help="number of time steps in one slot")
     parser.add_argument("--testing-interval", type=int, default=10, help="testing interval")
     parser.add_argument("--learning-type", type=str, default="maddpg", help="agent learning policy")
     parser.add_argument("--reward-maddpg", default=True, help="reward is the minimum of delay")
@@ -38,7 +38,7 @@ def parse_args():
     parser.add_argument("--Group-traffic", type=int, default=7, help="Number of traffic Group")
     #the ditribution of the layers for the training of model
     parser.add_argument("--type-distribution", type=str, default="softmax", help="The distribution of action: softmax or sigmoid")
-    
+
     # Checkpointing for the results
     parser.add_argument("--exp-name", type=str, default="test", help="name of the experiment")
     parser.add_argument("--save-dir", type=str, default="/tmp/policy/", help="directory in which training state and model should be saved")
@@ -58,7 +58,7 @@ def parse_args():
     parser.add_argument("--plots-dir", type=str, default="./Results/"+folder+"figures/", help="directory where plot data is saved")
     parser.add_argument("--data-dir", type=str, default="./Results/"+folder+"data/", help="directory where data is saved")
     parser.add_argument("--vehicle-data-dir", type=str, default="./IOV_DATA/IOV_DATA_48_2/", help="directory of vehicle data")
-# storing of the results fro the model trains and plots
+    # storing of the results fro the model trains and plots
     parser.add_argument("--MATRIX_TOPOLOGY-dir", type=str, default="./IOV_DATA/MATRIX_TOPOLOGY/", help="directory of the vehicle topology data")
     parser.add_argument("--Handover", default=False, help ="Condidered handover in assignment")
     parser.add_argument("--Que-obs", default=True, help ="Condidered agent.state.Q_delay in assignment")
@@ -75,7 +75,7 @@ def mlp_model(input, num_outputs, scope, reuse=False, num_units=128, rnn_cell=No
         out = layers.fully_connected(out, num_outputs=int(num_units/2), activation_fn=tf.nn.relu)
         out = layers.fully_connected(out, num_outputs=num_outputs, activation_fn= None)
         return out
-    
+
 #function to create the environment from the environment class
 def make_env(scenario_name, arglist, benchmark=False):
     from multiagent.environment import MultiAgentEnv
@@ -83,7 +83,7 @@ def make_env(scenario_name, arglist, benchmark=False):
 
     # load the resource allocation scenario
     scenario = scenarios.load(scenario_name + ".py").Scenario()
-    # create world, test_vehicles 
+    # create world, test_vehicles
     world = scenario.make_world(arglist)
     # create multiagent environment
     if benchmark:
@@ -109,7 +109,7 @@ def train(arglist, learning_type = 'maddpg'):
         env = make_env(arglist.scenario, arglist, arglist.benchmark)
         # Creating environment trainers using vehicle agents
         obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
-       #trainer of  learning of type maddpg and ddpg
+        #trainer of  learning of type maddpg and ddpg
         trainers = get_trainers(env, obs_shape_n, learning_type)
         #using policy based on the type of algorithm
         print('Policy used for training{}'.format( learning_type))
@@ -121,11 +121,11 @@ def train(arglist, learning_type = 'maddpg'):
         if arglist.restore:
             print('Loading results.....')
             U.load_state(arglist.load_dir)
-      #train steps for the agents
+        #train steps for the agents
         train_step = 0
         #store the loss of the agent
         loss_store = []
-#storeing the reward for each agent in array
+        #storeing the reward for each agent in array
         Reward_all =[]
         #this will save the tensorflow training model
         saver = tf.train.Saver()
@@ -152,7 +152,7 @@ def train(arglist, learning_type = 'maddpg'):
         delay_one_agent=[]
         delay_one_agent_max =[]
         delay_one_agent_mean = []
-        
+
         Delay_group_last =[]
         Delay_in_group =[]
         l_a=5
@@ -164,7 +164,7 @@ def train(arglist, learning_type = 'maddpg'):
         print('Starting training iterations for resource allocation environment.....')
         flag = False
         sum_service_rate = 10*4
-        while episode < arglist.num_episodes:  
+        while episode < arglist.num_episodes:
             flag = True
             for step in range(arglist.step_num):
                 #getting the observation
@@ -173,7 +173,7 @@ def train(arglist, learning_type = 'maddpg'):
                     for i, agent in enumerate(trainers):
                         # replay buffer adding
                         agent.experience(last_obs_n[i], action_n[i], rew_n[i], obs_n[i], done_n[i])
-#
+                #
                 # Getting agent actions
                 action_n = [agent.action(obs, flag) for agent, obs in zip(trainers, obs_n)]
                 last_obs_n, rew_n, done_n, info_n, changed_number, changed_group_num, delay_in_group, reward_real = env.step(action_n, step, learning_type)
@@ -182,7 +182,7 @@ def train(arglist, learning_type = 'maddpg'):
                 #totaling the delay in environment
                 Delay_group_last.append(env.world.last_delay.flatten())
                 Delay_in_group.append(delay_in_group.flatten())
-         #adding up all the delays in world evironment and appending them
+                #adding up all the delays in world evironment and appending them
                 Reward_all.append(np.mean(reward_real)*50)
                 Changed_number.append(changed_number)
                 delay_mean.append(np.mean(env.world.delay_ma))
@@ -191,7 +191,7 @@ def train(arglist, learning_type = 'maddpg'):
                 delay_group_mean_load_ma.append(np.sum(delay_in_group*env.world.load_group)/np.sum(env.world.load_group))
                 delay_group_max_ma.append(np.max(delay_in_group))
                 changed_group_num_all.append(changed_group_num)
-                
+
                 # now getting the distance of the vehicle from edge servers
                 if learning_type == 'maddpg':
                     delay_fix_mean.append(np.mean(env.world.delay_fix))
@@ -206,18 +206,18 @@ def train(arglist, learning_type = 'maddpg'):
                     delay_one_agent_mean.append(np.mean(env.world.centralized_Delay))
                     rho_ = np.sum(env.world.load_group)/sum_service_rate
                     rho.append(rho_)
-                    
+
             #now if the learning is of ddpg type
             for i, agent in enumerate(trainers):
-                agent.experience(obs_n[i], action_n[i], rew_n[i], obs_n[i], 1)   
-            
+                agent.experience(obs_n[i], action_n[i], rew_n[i], obs_n[i], 1)
+
             print("Delay greater > 20ms: {}".format(sum(i < -20 for i in Reward_all[-arglist.step_num:])))
             #prnting the steps episode, mean, rewardand the max reward based on delay
             print("Group:{}, steps: {}, episodes: {}, mean {} reward: {}, and max reward: {}".format(
                 episode%arglist.Group_traffic, train_step, episode, learning_type, np.mean(Reward_all[-arglist.step_num:-1]), np.min(Reward_all[-arglist.step_num:-1])))
-#
+            #
             if episode%arglist.update_interval ==0:
-                loss = None 
+                loss = None
                 for agent in trainers:
                     agent.preupdate()
                 for agent in trainers:
@@ -230,16 +230,16 @@ def train(arglist, learning_type = 'maddpg'):
             episode += 1
             if episode>0.3*arglist.num_episodes and episode%500==0:
                 plot_implot(arglist, Reward_all, None, None, arglist.step_num, arglist.Group_traffic, "Reward received")
-        
+
         U.save_state(arglist.data_dir, saver=saver)
     #now if the learning type is maddpg
     if learning_type == 'maddpg':
         return (Reward_all, delay_mean, delay_max, delay_fix_mean, delay_fix_max,
-            Changed_number, changed_group_num_all, delay_group_mean_ma,
-            delay_group_mean_fix, delay_group_mean_load_ma, delay_group_mean_load_fix,
-            delay_group_max_ma, delay_group_max_fix, delay_one_agent,
-            delay_in_group_test, Delay_group_last, Delay_in_group,
-            Tdelay, delay_one_agent_mean,delay_one_agent_max,rho)
+                Changed_number, changed_group_num_all, delay_group_mean_ma,
+                delay_group_mean_fix, delay_group_mean_load_ma, delay_group_mean_load_fix,
+                delay_group_max_ma, delay_group_max_fix, delay_one_agent,
+                delay_in_group_test, Delay_group_last, Delay_in_group,
+                Tdelay, delay_one_agent_mean,delay_one_agent_max,rho)
     else:
         return (Reward_all, delay_mean, delay_max, Changed_number, changed_group_num_all,
                 delay_group_mean_ma, delay_group_mean_load_ma, delay_group_mean_load_fix,
@@ -270,7 +270,7 @@ def plot_figure(arglist, data, y_value, INTERVAL_STEP = 600):
     a4_dims = (8, 5)
     plt.figure(figsize=a4_dims,edgecolor='red')
     tips = pd.read_csv(arglist.data_dir+ y_value + "Compare_data.csv")
-   #plot for reward based on the number of episodes
+    #plot for reward based on the number of episodes
     plot = sns.boxplot(x="Episode Number", y=y_value, data=tips, linewidth=1.5)
     plt.rc('xtick', labelsize=18)
     plt.rc('ytick', labelsize=18)
@@ -295,14 +295,14 @@ def plot_implot(arglist, data, data2, data3, num1, num2, name, x_label ="Episode
     Episode = int(len(data_new)/num2)
     data_new = np.reshape(data_new[:num2*Episode],(Episode, num2)).T
 
-    plt.rc('xtick', labelsize=18) 
-    plt.rc('ytick', labelsize=18) 
-    plt.rc('axes', labelsize=18) 
-    plt.rc('axes', titlesize=18) 
+    plt.rc('xtick', labelsize=18)
+    plt.rc('ytick', labelsize=18)
+    plt.rc('axes', labelsize=18)
+    plt.rc('axes', titlesize=18)
     plt.rc('legend', fontsize=18)
     #plot of the data
     l1 = sns.tsplot(data_new, color='blue',legend = True)
-    
+
     if data2 is not None:
         data_new2 = []
         if num1>1:
@@ -310,21 +310,21 @@ def plot_implot(arglist, data, data2, data3, num1, num2, name, x_label ="Episode
                 data_new2.append(np.mean(data2[i:i+num1]))
         else:
             data_new2=data2
-         #getting the shape of new data after appending
+        #getting the shape of new data after appending
         data_new2 = np.reshape(data_new2[:num2*Episode],( Episode, num2)).T
         l2 = sns.tsplot(data_new2, color='red',legend = True)
         if data3 is not None:
             data_new3 = []
             for i in range(0,len(data3),num1):
                 data_new3.append(np.mean(data3[i:i+num1]))
-        else:        
+        else:
             plt.legend([l1,l2], labels=["MADDPG","DDPG"])
     else:
-         plt.legend(l1, labels=["MADDPG"])
-        
+        plt.legend(l1, labels=["MADDPG"])
+
     plt.xlabel(x_label)
     plt.ylabel(name)
-    
+
     l1.figure.savefig(arglist.plots_dir+ name+ 'figure.pdf', dpi=400)
 #FUNCTION TO SAVE FILE TO CSV FOR THE DATA
 def save_file(varaible, name, leaening_type):
@@ -332,8 +332,8 @@ def save_file(varaible, name, leaening_type):
     with open(rew_file_name, 'w') as fp:
         csv_write = csv.writer(fp)
         csv_write.writerow(varaible)
-        
- 
+
+
 def writeList2CSV(myList, name, learning_type):
     rew_file_name = arglist.data_dir+ learning_type + name+'.csv'
     try:
@@ -348,12 +348,12 @@ def writeList2CSV(myList, name, learning_type):
                     file.write(",")
             if j < lenth_- 1:
                 j += 1
-                file.write("\n") 
+                file.write("\n")
     except Exception :
         print("File error please check format")
     finally:
         file.close();
-        
+
 #function to plot and save as pdf
 def plot_fig_one_line(data1 ,x_label, y_label, name):
     a4_dims = (8, 5)
@@ -370,26 +370,26 @@ def plot_Resource_delay(data1, data2, legend, name, max_=None):
     if max_ ==None:
         max_ =  max(np.max(data1),np.max(data2))+1
     if max_/50 < 1:
-        dx = round(max_/50, 2) 
+        dx = round(max_/50, 2)
     else:
         dx = int(max_/50)
     X = np.arange(0, max_, dx)
-#    data1 = np.sort(data1)
-    
+    #    data1 = np.sort(data1)
+
     y_1 = []
     y_2 = []
     for x in X:
-       y_1.append(len(data1[data1<x])/len(data1))
-       y_2.append(len(data2[data2<x])/len(data2))
-    
+        y_1.append(len(data1[data1<x])/len(data1))
+        y_2.append(len(data2[data2<x])/len(data2))
+
     plt.plot(X, y_1, 'r')
     plt.plot(X, y_2, 'b')
-    
+
     plt.legend(labels=legend)
     plt.xlabel('Resource Allocation Delay')
     plt.ylabel('Probability')
     plt.savefig(arglist.plots_dir+name+ '.pdf', dpi=400)
-    
+
 
 if __name__ == '__main__':
 
@@ -401,16 +401,16 @@ if __name__ == '__main__':
     learning_type = arglist.learning_type
     if learning_type == 'maddpg':
         (Reward_all, delay_mean, delay_max, delay_fix_mean, delay_fix_max,
-            Changed_number, changed_group_num_all, delay_group_mean_ma,
-            delay_group_mean_fix, delay_group_mean_load_ma, delay_group_mean_load_fix,
-            delay_group_max_ma, delay_group_max_fix, delay_one_agent,
-            delay_in_group_test, Delay_group_last, Delay_in_group,
-            Tdelay, delay_one_agent_mean,delay_one_agent_max,rho)= train(arglist, learning_type)
+         Changed_number, changed_group_num_all, delay_group_mean_ma,
+         delay_group_mean_fix, delay_group_mean_load_ma, delay_group_mean_load_fix,
+         delay_group_max_ma, delay_group_max_fix, delay_one_agent,
+         delay_in_group_test, Delay_group_last, Delay_in_group,
+         Tdelay, delay_one_agent_mean,delay_one_agent_max,rho)= train(arglist, learning_type)
     else:
         (Reward_all, delay_mean, delay_max, Changed_number, changed_group_num_all,
-                delay_group_mean_ma, delay_group_mean_load_ma, delay_group_mean_load_fix,
-                delay_group_max_ma, delay_in_group_test)= train(arglist, learning_type)
-   # saving of the data for verification
+         delay_group_mean_ma, delay_group_mean_load_ma, delay_group_mean_load_fix,
+         delay_group_max_ma, delay_in_group_test)= train(arglist, learning_type)
+    # saving of the data for verification
     save_file(Reward_all,'_rewards',learning_type)
     save_file(delay_mean,'_mean_delay',learning_type)
     save_file(delay_max,'_max_delay',learning_type)
@@ -418,7 +418,7 @@ if __name__ == '__main__':
     save_file(changed_group_num_all,'_changed_group_num_all',learning_type)
     save_file(delay_group_mean_ma,'_delay_group_mean',learning_type)
     save_file(delay_group_max_ma,'_delay_group_max_ma',learning_type)
-    
+
     writeList2CSV(delay_in_group_test,'_delay_in_group_test',learning_type)
     save_file(delay_group_mean_load_ma,'_delay_group_mean_load_ma',learning_type)
     #saving all the delays for maddpg type
@@ -431,13 +431,13 @@ if __name__ == '__main__':
         save_file(delay_one_agent,'_delay_group_one','centrialized')
         save_file(delay_one_agent_mean,'_delay_mean','centrialized')
         save_file(delay_one_agent_max,'_delay_max','centrialized')
-        
+
         save_file(Delay_group_last,'_Delay_group_last','maddpg')
         save_file(Delay_in_group,'_Delay_in_group','maddpg')
         save_file(rho,'_rho','sum')
-        
-        
-          
+
+
+
 
         num = arglist.step_num
         #plot for reward
@@ -446,11 +446,11 @@ if __name__ == '__main__':
         plot_implot(arglist, delay_mean, delay_fix_mean, delay_one_agent_mean, num, arglist.Group_traffic, "Agent Delay Mean")
         #plot for delay in group
         plot_implot(arglist, delay_group_max_ma, delay_group_max_fix, delay_one_agent_max, num, arglist.Group_traffic, "Group Resource delay")
-         
-    
+
+
         data1 = [i[8] for i in delay_in_group_test]
         plot_fig_one_line(data1,'Time', 'Mean MAX Delay Testing', 'mean of the delay')
-    
+
         matrix=np.array(delay_in_group_test,dtype=float)
         matrix_T=np.transpose(matrix)
 
@@ -458,11 +458,11 @@ if __name__ == '__main__':
         size = arglist.Group_traffic
         n_new =np.mean( np.reshape(Changed_number[-num*size:],(int(len(Changed_number[-num*size:])/num),num)),0)
         plot_fig_one_line(n_new ,'Time', 'VEHICLES CHANGED IN SERVER', 'Number of Vehicles')
-        
+
         n_new =np.mean( np.reshape(changed_group_num_all[-num*size:],(int(len(changed_group_num_all[-num*size:])/num),num)),0)
         plot_fig_one_line(n_new ,'Time', 'Changed groups', 'Change Groups')
-        
-#Now plotting resource delay graph for the edge server
+
+        #Now plotting resource delay graph for the edge server
         import itertools
         data1 = list(itertools.chain(*Delay_in_group[-num*7:]))
         data2 = list(itertools.chain(*Delay_group_last[-num*7:]))
@@ -476,5 +476,5 @@ if __name__ == '__main__':
     else:
         #else plot reward against episode graph
         plot_fig_one_line(Reward_all[0:-1:10] ,'Episode Number', 'Reward received', 'reward')
-    #give the time cost for the delay in resource allocation 
+    #give the time cost for the delay in resource allocation
     print("Time cost in min: " + str(round((time.time()-t_start)/60/60, 2)))

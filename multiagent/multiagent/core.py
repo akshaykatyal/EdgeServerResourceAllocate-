@@ -24,7 +24,7 @@ class AgentState(EntityState):
         # the load of crossover grps
         self.c_load = None
         # load of agent's groups
-        self.load =None 
+        self.load =None
         # average delay of agents and its controlled groups
         self.avg_delay = 0
         # Queue delay
@@ -33,11 +33,11 @@ class AgentState(EntityState):
         self.Tdelay=0
         #processing delay
         self.ProDelay=0
-        
+
 
 # action of the agent
 class Action(object):
-    def __init__(self):     
+    def __init__(self):
         # probaility of control
         self.p_ctl = None
         # action dimensionality
@@ -50,7 +50,7 @@ class Entity(object):
     def __init__(self):
         # vehicle ID
         self.id = 0
-        # name 
+        # name
         self.name = ''
         # entity can move / be pushed
         self.movable = False
@@ -63,14 +63,14 @@ class Entity(object):
 
 # properties of landmark entities
 class Landmark(Entity):
-     def __init__(self):
+    def __init__(self):
         super(Landmark, self).__init__()
-        
+
 class Vehicle(Entity):
-     def __init__(self):
-         super(Vehicle, self).__init__()
-         self.pos = None
-         self.load = 0
+    def __init__(self):
+        super(Vehicle, self).__init__()
+        self.pos = None
+        self.load = 0
 
 # properties of agent entities
 class Agent(Entity):
@@ -83,7 +83,7 @@ class Agent(Entity):
         # action
         self.action = Action()
         # script behavior to execute
-        self.action_callback = None        
+        self.action_callback = None
         # location of agents
         self.pos = None
         # number of cross-over groups in the environment
@@ -98,7 +98,7 @@ class Agent(Entity):
         self.distance =[]
         # serve rate of agents 1 packets/ms
         self.service_rate = 10
-        # the router connected 
+        # the router connected
         self.router = 0
         # manage based on distance
         self.distance_manage = None
@@ -141,13 +141,13 @@ class World(object):
         # communication channel dimensionality
         self.dim_c = 0
         #number of vehicles
-        self.num_v = 60
+        self.num_v = 50
         self.agent_num = 4
         self.agent_num_local = 2
         #creating a region with width and height 10*10
         self.region_W = int(size_map*10)
         self.region_H = int(size_map*10)
-        
+
         self.centralized_Delay=0
 
         #all the group between all agents
@@ -158,7 +158,7 @@ class World(object):
         self.cross_group = []
         # multi controlled group (agent->group ID)
         self.mul_group_c = {}
-        # sending rate spped of light
+        # sending rate spped of 3*10^8
         self.sending_rate = 3*pow(10,8)
         # all controled group
         self.all_con_group = np.zeros([self.region_W, self.region_H] )
@@ -171,16 +171,16 @@ class World(object):
         self.MA_v_c = None
         # last step assignment
         self.MA_v_c_last = None
-        # fix management 
+        # fix management
         self.Fix_v_c = None
         # controller can management vehicles (agents, vehicles)=1 if it can
         self.v_c_possible = None
-        
+
         # coverage of server
         self.edgeserve = 0.5
         #number of vehicle in each groups
         self.vehicle_num = None
-#getting edge server location using matrix
+        #getting edge server location using matrix
 
         self.topology_matrix = None
         self.num_router = 0
@@ -189,21 +189,22 @@ class World(object):
         self.path_delay = None
         #small group delay
         self.group_delay=None
-        
+
+
         self.load_group = np.zeros([self.region_W, self.region_H] )
-        
-#        for atitude and longitude change
+
+        #        for atitude and longitude change
         self.offsize_lat = 22.9427
         self.offsize_lng = 43.3175
         self.zom = 10.256
-        
+
         self.distance_assign_matrix = np.zeros([self.region_W, self.region_H] )
-        
+
         self.agent_group_cover = np.zeros([self.agent_num, self.region_W, self.region_H] )
-        
+
         self.delay_in_group_fix = None
-             
-#function to get the topology matrix for the rio bus dataset
+
+    #function to get the topology matrix for the rio bus dataset
     def set_topo(self, dic):
         topology = dic+'Rio_de_Janeiro.matrix'
         #this gets the number of edge servers from the matrix
@@ -214,18 +215,18 @@ class World(object):
         po = []
         with open(dic+'Rio_de_Janeiro_nodes.txt', 'r') as f:
             for j in f.readlines():
-              po.append( list(map(lambda x: float(x), j[:-1].split(' ')[1:3]))) 
+                po.append( list(map(lambda x: float(x), j[:-1].split(' ')[1:3])))
         po_array = np.array(po)
-        
+
         po_array[:,0] = (po_array[:,0]+self.offsize_lat)*self.zom*self.region_W
         po_array[:,1] =(po_array[:,1]+self.offsize_lng)*self.zom*self.region_H
         self.router_pos = po_array
-    
+
     def set_action_dim(self):
-        for agent in self.agents:      
+        for agent in self.agents:
             agent.action.dim_a = len(self.mul_group_c.get(agent.id)[0])
 
-       
+
     # set edge server rate of agents 1 packets/ms
     def set_server_rate(self):
         for agent in self.agents:
@@ -239,11 +240,11 @@ class World(object):
         for x in range(self.region_H):
             for y in range(self.region_W):
                 # the left and bottom point
-                LB  = (x,y) 
+                LB  = (x,y)
                 _term = 0
                 for agent in self.agents:
                     distance = np.linalg.norm(np.array(agent.pos) - LB)
-                    if distance <= agent.r:  
+                    if distance <= agent.r:
                         agent.group.append(LB)
                         agent.distance.append(distance)
                         _term += 1
@@ -255,8 +256,8 @@ class World(object):
         self.cross_group_num = len(cross_group)
         self.cross_a = cross_group
         self.all_group = all_group
-  
-        for agent in self.agents:  
+
+        for agent in self.agents:
             listA = agent.group
             id_agent = list(set(listA).intersection(set(cross_group)))
             id_agent.sort()
@@ -265,13 +266,13 @@ class World(object):
             if list(set(agent.cross_group).difference(set(self.cross_a))) != [] :
                 print("error in agent cross groups")
                 input()
-             # set region fix group from 1:agent_num
+            # set region fix group from 1:agent_num
             for value in agent.group:
                 self.all_con_group[value[0],value[1]] = agent.id+1
-                
+
     # multi vehicle (agents) performing actions in environment
     def get_real_action(self, probality_action):
-        
+
         agent_group_matrix = np.ones([self.agent_num, self.cross_group_num])*(-10)
         for i, agent in enumerate(self.agents):
             for value in self.mul_group_c[agent.id]:
@@ -283,7 +284,7 @@ class World(object):
                             agent_group_matrix[i,p] = probality_action[i][k]+np.random.uniform(low=0, high=0.1, size=1)
                     else:
                         agent_group_matrix[i,p] = probality_action[i][k]
-        
+
         self.last_all_con_group = self.all_con_group.copy()
         agent_max = np.where(agent_group_matrix==np.max(agent_group_matrix, axis=0))
         te = np.array(agent_max)
@@ -295,10 +296,10 @@ class World(object):
             k+=1
         if len(agent_max) > len(self.cross_a):
             print(agent_max)
-        return  agent_max   
+        return  agent_max
 
-    
-    # return all entities in the world
+
+        # return all entities in the world
     @property
     def entities(self):
         return self.agents + self.landmarks
@@ -316,7 +317,7 @@ class World(object):
     # update state of the envronment world upon agent action in state
     def step(self, action_n):
         # agents control the group (cross_group_region,1)
-        real_action = self.get_real_action(action_n) 
+        real_action = self.get_real_action(action_n)
         if len(real_action) > len(self.cross_a):
             print("error")
             print(action_n)
@@ -327,8 +328,8 @@ class World(object):
             group_id = np.argwhere(real_action==agent.id)
             # update agent.state.v_manage
             self.update_agent_state(agent, group_id)
-        
-#this function update the state of the agent on the
+
+    #this function update the state of the agent on the
     def update_agent_state(self, agent, real_action):
         new_v_manage = np.zeros(len(agent.state.v_manage))
         if real_action is not None and real_action.size>0:
@@ -357,7 +358,7 @@ class World(object):
                 speed = np.sqrt(np.square(entity.state.p_vel[0]) + np.square(entity.state.p_vel[1]))
                 if speed > entity.max_speed:
                     entity.state.p_vel = entity.state.p_vel / np.sqrt(np.square(entity.state.p_vel[0]) +
-                                                                  np.square(entity.state.p_vel[1])) * entity.max_speed
+                                                                      np.square(entity.state.p_vel[1])) * entity.max_speed
             entity.state.p_pos += entity.state.p_vel * self.dt
 
 

@@ -3,16 +3,13 @@ from gym import spaces
 from gym.envs.registration import EnvSpec
 import numpy as np
 from multiagent.multi_discrete import MultiDiscrete
-l_a = 5 # packets/ms, lower-bound of arriving rate of vehicles of G1
-l_b = 50 #upper bound of packets for Group1
+l_a = 10 # packets/ms, lower-bound of arriving rate of vehicles of G1
+l_b = 30 #upper bound of packets for Group1
 l_a_r = 100 # packets/ms of edge server
 l_b_r = 200# packets of Q size
 remote_delay_max = 8 #ms
 Qlength = 200 #for the server
-#transmission delay for the edge server
-Tdelay=l_a/l_a_r
-#setting Q length
-Qlength= 200
+
 
 # environment for all agents in the multiagent resourece allocattion environment
 # currently code assumes that no agents will be created/destroyed at runtime!
@@ -39,7 +36,7 @@ class MultiAgentEnv(gym.Env):
         self.shared_reward = world.collaborative if hasattr(world, 'collaborative') else False
         self.time = 0
         #defining maximum number of step for the environment
-        self.max_step = 8
+        self.max_step = 23
         # configure spaces
         self.action_space = []
         #the observation space
@@ -61,11 +58,11 @@ class MultiAgentEnv(gym.Env):
                 self.action_space.append(act_space)
             else:
                 self.action_space.append(total_action_space[0])
-                
+
             # observation space for the environment
             obs_dim = len(observation_callback(agent, self.world, step=0))
             self.observation_space.append(spaces.Box(low=0, high=+np.inf, shape=(obs_dim,), dtype=np.float32))
-#function for the agent taking steps in environment
+    #function for the agent taking steps in environment
     def step(self, action_n, step_num, learning_type ='maddpg'):
         #obseration space for the steps for vehicle agents
         obs_n = []
@@ -78,12 +75,12 @@ class MultiAgentEnv(gym.Env):
         # advance world state
         self.world.step(action_n)
         for agent in self.agents:
-#getting observation for the agents in environment
+            #getting observation for the agents in environment
             obs = self._get_obs(agent, step_num)
             obs_n.append(obs)
-#getting the done for the steps agent take
+            #getting the done for the steps agent take
             done_n.append(self._get_done(agent))
-#getting information for each step
+            #getting information for each step
             info_n['n'].append(self._get_info(agent))
         reward, changed_number, changed_group_num, delay_in_group, reward_real= self._get_reward(learning_type)
         if self.shared_reward and np.size(reward)==1:
@@ -94,13 +91,13 @@ class MultiAgentEnv(gym.Env):
         obser=obs_n
         return obser, reward_n, done_n, info_n, changed_number, changed_group_num, delay_in_group, reward_real
 
-#function to reset the environment
+    #function to reset the environment
     def reset(self, train_step, step, arglist, IF_test=False, TEST_V = None):
         # reset environment world
         self.reset_callback(self.world, train_step, step, arglist, IF_test, TEST_V)
         obs_n = []
         self.agents = self.world.policy_agents
-        Q_delay = np.zeros(self.world.agent_num)+Tdelay
+        Q_delay = np.zeros(self.world.agent_num)
         for agent in self.agents:
             # get Q delay
             Q_delay[agent.id] = self.get_latency_one_agent(agent, self.world, agent.service_rate)
@@ -111,18 +108,18 @@ class MultiAgentEnv(gym.Env):
         self.world.last_delay = self.get_latency_group(self.world, Q_delay, self.world.all_con_group)
         #function returns the number of observations
         return obs_n
-    
+
     def get_latency_group(self, world, Q_delay, agent):
-#delay in the group in resource allocation
+        #delay in the group in resource allocation
         delay_in_group = np.zeros([world.region_W, world.region_H])
         for x in range(world.region_W):
-            for y in range(world.region_H): 
+            for y in range(world.region_H):
                 if agent[x,y]>0:
                     i = int(agent[x,y])-1
                     delay_in_group[x,y] = Q_delay[i] + world.group_delay[i,x,y]
         #the function returnthe delay in the group
         return delay_in_group
-#function getting latency of one agent
+    #function getting latency of one agent
     def get_latency_one_agent(self, agent, world, service_rate):
         #  latency of agent based on Small group
 
@@ -131,10 +128,14 @@ class MultiAgentEnv(gym.Env):
         # getting the value of q delay
         if self.Q_type == "inf":
             Q_delay = self.delay_Queue_inf(load_all_cross, service_rate, agent.state.fix_load)
+            pdelay=self.Process_delay(world)
+            tdelay=self.Transmssion_delay(world)
 
         else:
             Q_delay = self.delay_Queue(load_all_cross, service_rate, Qlength, agent.state.fix_load)
-        return Q_delay + Tdelay
+            pdelay=self.Process_delay(world)
+            tdelay=self.Transmssion_delay(world)
+        return Q_delay + pdelay+tdelay
 
     # function to get q delay
     def delay_Queue_inf(self, load_server, service_rate, fix_load_server=0):
@@ -168,7 +169,7 @@ class MultiAgentEnv(gym.Env):
                         d = Qlen / mu + (K - 1) / (2 * lamda[i])
                     else:
                         d = Qlen / mu + (pow(r, 2) + K * pow(r, K + 2) - K * pow(r, K + 1) - pow(r, K + 2)) / (
-                                    lamda[i] * (1 - r) * (1 - pow(r, K)))
+                                lamda[i] * (1 - r) * (1 - pow(r, K)))
                 delay.append(d)
         else:
             if lamda == 0:
@@ -178,11 +179,11 @@ class MultiAgentEnv(gym.Env):
                     d = Qlen / mu + (K - 1) / (2 * lamda)
                 else:
                     d = (pow(rho, 2) + K * pow(rho, K + 2) - K * pow(rho, K + 1) - pow(rho, K + 2)) / (
-                                lamda * (1 - rho) * (1 - pow(rho, K)))
+                            lamda * (1 - rho) * (1 - pow(rho, K)))
             delay = d
-        return delay + Tdelay
+        return delay
 
-    
+
     # get info used for the results
     def _get_info(self, agent):
         if self.info_callback is None:
@@ -213,6 +214,33 @@ class MultiAgentEnv(gym.Env):
 
     # set env action for a particular agent
     def _set_action(self, action, agent, action_space, time=None):
-#getting the probability of action from agent
+        #getting the probability of action from agent
         agent.action.p_ctl = action
+
+    def Process_delay(self,world):
+
+        for agent in world.agents:
+            load_agent = []
+            all_group_agent = agent.group
+            for i in range(len(all_group_agent)):
+                load = world.load_group[all_group_agent[i]]
+                load_agent.append(load)
+            #get load of agent in all its coverage groups
+            agent.state.load = load_agent
+            for a in agent.state.load:
+                prodelay=a/10
+        return prodelay
+    def Transmssion_delay(self,world):
+        mu=10
+        for agent in world.agents:
+            load_agent = []
+            all_group_agent = agent.group
+            for i in range(len(all_group_agent)):
+                load = world.load_group[all_group_agent[i]]
+                load_agent.append(load)
+            #get load of agent in all its coverage groups
+            agent.state.load = load_agent
+            for a in agent.state.load:
+                tdelay=a/mu
+        return tdelay
 
