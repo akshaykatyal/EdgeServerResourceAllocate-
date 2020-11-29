@@ -1,14 +1,24 @@
+#importing of the all the necessary libraries.
 import gym
 from gym import spaces
 from gym.envs.registration import EnvSpec
 import numpy as np
+import math
 from multiagent.multi_discrete import MultiDiscrete
-l_a = 10 # packets/ms, lower-bound of arriving rate of vehicles of G1
-l_b = 30 #upper bound of packets for Group1
-l_a_r = 100 # packets/ms of edge server
-l_b_r = 200# packets of Q size
+#number of task at the lower biund of group G1
+l_a = 10
+#upper bound for the number of tasks for group 1
+l_b = 30
+#Number of tasks/ms for the edge server
+l_a_r = 100
+#Number of tasks in q size
+l_b_r = 200
 remote_delay_max = 8 #ms
+size_map = 1000/2000
 Qlength = 200 #for the server
+fc=2800 #frequency of cell is 2.8ghz
+Bandwidth=60 #60mhz bandwidth
+gaussianpower=-95 # gaussianmoise is -95dbm
 
 
 # environment for all agents in the multiagent resourece allocattion environment
@@ -89,6 +99,7 @@ class MultiAgentEnv(gym.Env):
             #if no reward is received by the agent
             reward_n = reward
         obser=obs_n
+        #this returns the observation, rewards, changed groups, delays
         return obser, reward_n, done_n, info_n, changed_number, changed_group_num, delay_in_group, reward_real
 
     #function to reset the environment
@@ -97,9 +108,10 @@ class MultiAgentEnv(gym.Env):
         self.reset_callback(self.world, train_step, step, arglist, IF_test, TEST_V)
         obs_n = []
         self.agents = self.world.policy_agents
+        #function for q delay
         Q_delay = np.zeros(self.world.agent_num)
         for agent in self.agents:
-            # get Q delay
+
             Q_delay[agent.id] = self.get_latency_one_agent(agent, self.world, agent.service_rate)
             agent.state.Q_delay = Q_delay[agent.id]
             obs = self._get_obs(agent, step)
@@ -108,34 +120,35 @@ class MultiAgentEnv(gym.Env):
         self.world.last_delay = self.get_latency_group(self.world, Q_delay, self.world.all_con_group)
         #function returns the number of observations
         return obs_n
-
+    #fucntion to get delay in a group
     def get_latency_group(self, world, Q_delay, agent):
-        #delay in the group in resource allocation
         delay_in_group = np.zeros([world.region_W, world.region_H])
+        tdelay_group=self.Transmission_delay(world)
         for x in range(world.region_W):
             for y in range(world.region_H):
                 if agent[x,y]>0:
                     i = int(agent[x,y])-1
-                    delay_in_group[x,y] = Q_delay[i] + world.group_delay[i,x,y]
-        #the function returnthe delay in the group
+                    #getting the delay in the group
+                    delay_in_group[x,y] = Q_delay[i] + world.group_delay[i,x,y] + tdelay_group
         return delay_in_group
-    #function getting latency of one agent
-    def get_latency_one_agent(self, agent, world, service_rate):
-        #  latency of agent based on Small group
 
+    #function getting latency of one agent
+
+    def get_latency_one_agent(self, agent, world, service_rate):
+        #latency of agent based on Small group
+
+        for i in enumerate(world.agents):
+            pdelay=self.Process_delay(service_rate,world)
         agent_load_vector = agent.state.c_load * agent.state.v_manage
         load_all_cross = np.sum(agent_load_vector)
-        # getting the value of q delay
+        #getting the value of q delay
         if self.Q_type == "inf":
-            Q_delay = self.delay_Queue_inf(load_all_cross, service_rate, agent.state.fix_load)
-            pdelay=self.Process_delay(world)
-            tdelay=self.Transmssion_delay(world)
-
+            Q_delay = self.delay_Queue_inf(load_all_cross, service_rate, agent.state.fix_load) +pdelay
         else:
-            Q_delay = self.delay_Queue(load_all_cross, service_rate, Qlength, agent.state.fix_load)
-            pdelay=self.Process_delay(world)
-            tdelay=self.Transmssion_delay(world)
-        return Q_delay + pdelay+tdelay
+            Q_delay = self.delay_Queue(load_all_cross, service_rate, Qlength, agent.state.fix_load) +pdelay
+        #getting latency due to delays of the agents
+        return Q_delay
+
 
     # function to get q delay
     def delay_Queue_inf(self, load_server, service_rate, fix_load_server=0):
@@ -147,7 +160,7 @@ class MultiAgentEnv(gym.Env):
         if mu > lamda:
             delay = min(40, 1 / (mu - lamda))
         else:
-            delay = 50
+            delay = 40
         #returns the delay q for simulation
         return delay
 
@@ -181,7 +194,7 @@ class MultiAgentEnv(gym.Env):
                     d = (pow(rho, 2) + K * pow(rho, K + 2) - K * pow(rho, K + 1) - pow(rho, K + 2)) / (
                             lamda * (1 - rho) * (1 - pow(rho, K)))
             delay = d
-        return delay
+        return delay+1/service_rate
 
 
     # get info used for the results
@@ -217,30 +230,60 @@ class MultiAgentEnv(gym.Env):
         #getting the probability of action from agent
         agent.action.p_ctl = action
 
-    def Process_delay(self,world):
+    #fucntion for getting the data rate
+    def datarate(self):
+        path_loss=32.4+20*math.log10(fc)+31.9*math.log10(size_map)#this is the path loss as mentioned in the paper
+        path=path_loss/10
+        Power=100 #packets/ms, The transmit power of the server
+        datarate=Bandwidth*math.log2(1+ (Power * pow(10,-path)/gaussianpower))
+        return datarate
+    # #function to ge the process delay
+    # def process_delay(self, world):
+    #     mu=1000
+    #     pro=[]
+    #     for agent in world.agents:
+    #         load_agent = []
+    #         all_group_agent = agent.group
+    #         for i in range(len(all_group_agent)):
+    #             load = world.load_group[all_group_agent[i]]
+    #             load_agent.append(load)
+    #         #for i in mu:
+    #         #  if mu[i] == 0:
+    #         #   pro_delay = 0
+    #         # else:
+    #         for agent in load_agent:
+    #             pro_delay = agent/mu
+    #     return pro_delay
 
+    #
+    #
+    #function for getting the processing delay
+    def Process_delay(self,servicerate, world):
+        mu=servicerate
         for agent in world.agents:
             load_agent = []
             all_group_agent = agent.group
             for i in range(len(all_group_agent)):
                 load = world.load_group[all_group_agent[i]]
                 load_agent.append(load)
-            #get load of agent in all its coverage groups
-            agent.state.load = load_agent
-            for a in agent.state.load:
-                prodelay=a/10
+            for a in load_agent:
+                prodelay=a/mu
         return prodelay
-    def Transmssion_delay(self,world):
-        mu=10
-        for agent in world.agents:
-            load_agent = []
-            all_group_agent = agent.group
-            for i in range(len(all_group_agent)):
-                load = world.load_group[all_group_agent[i]]
-                load_agent.append(load)
-            #get load of agent in all its coverage groups
-            agent.state.load = load_agent
-            for a in agent.state.load:
-                tdelay=a/mu
+    #function for gettig transmission delay
+    # def Transmssion_delay(self,world):
+    #     rate=100
+    #     for agent in world.agents:
+    #         load_agent = []
+    #         all_group_agent = agent.group
+    #         for i in range(len(all_group_agent)):
+    #             load = world.load_group[all_group_agent[i]]
+    #             load_agent.append(load)
+    #         for a in load_agent:
+    #             tdelay=a/rate
+    #     return tdelay
+    #function to get the transmission delay
+    def Transmission_delay(self,world):
+        load_c =np.sum(world.load_group)
+        rate=self.datarate()
+        tdelay= load_c/rate
         return tdelay
-

@@ -11,8 +11,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import maddpg.common.tf_util as U
 from maddpg.trainer.maddpg import MADDPGAgentTrainer
+import random
+from random import getrandbits, randint
 import tensorflow.contrib.layers as layers
 import csv
+from multiagent.scenarios import resourceallocate
 
 #defining function to parse arguments
 def parse_args():
@@ -20,8 +23,8 @@ def parse_args():
     # Environment
     parser.add_argument("--scenario", type=str, default="resourceallocate", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=2, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=1500, help="number of episodes")
-    parser.add_argument("--step-num", type=int, default=48, help="number of time steps in one slot")
+    parser.add_argument("--num-episodes", type=int, default=1000, help="number of episodes")
+    parser.add_argument("--step-num", type=int, default=24, help="number of time steps in one slot")
     parser.add_argument("--testing-interval", type=int, default=10, help="testing interval")
     parser.add_argument("--learning-type", type=str, default="maddpg", help="agent learning policy")
     parser.add_argument("--reward-maddpg", default=True, help="reward is the minimum of delay")
@@ -32,7 +35,7 @@ def parse_args():
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
     parser.add_argument("--batch-size", type=int, default=1024, help="number of episodes to optimize at the same time")
     #the number of update intervals
-    parser.add_argument("--update-interval", type=int, default=10, help="update interval")
+    parser.add_argument("--update-interval", type=int, default=7, help="update interval")
     #no of units for algorithm training
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
     parser.add_argument("--Group-traffic", type=int, default=7, help="Number of traffic Group")
@@ -59,7 +62,7 @@ def parse_args():
     parser.add_argument("--data-dir", type=str, default="./Results/"+folder+"data/", help="directory where data is saved")
     parser.add_argument("--vehicle-data-dir", type=str, default="./IOV_DATA/IOV_DATA_48_2/", help="directory of vehicle data")
     # storing of the results fro the model trains and plots
-    parser.add_argument("--MATRIX_TOPOLOGY-dir", type=str, default="./IOV_DATA/MATRIX_TOPOLOGY/", help="directory of the vehicle topology data")
+    parser.add_argument("--Coordinates_Edge-dir", type=str, default="./IOV_DATA/Coordinates_Edge/", help="directory of the vehicle topology data")
     parser.add_argument("--Handover", default=False, help ="Condidered handover in assignment")
     parser.add_argument("--Que-obs", default=True, help ="Condidered agent.state.Q_delay in assignment")
     parser.add_argument("--Step-observation", default=False, help ="Condidered step in observation")
@@ -69,7 +72,7 @@ def mlp_model(input, num_outputs, scope, reuse=False, num_units=128, rnn_cell=No
     # This model takes as input an observation and returns values of all actions
     with tf.variable_scope(scope, reuse=reuse):
         out = input
-        #4 layers are used
+        # 4 layers are used for the neural network
         out = layers.fully_connected(out, num_outputs=num_units, activation_fn=tf.nn.relu)
         out = layers.fully_connected(out, num_outputs=int(num_units/2), activation_fn=tf.nn.relu)
         out = layers.fully_connected(out, num_outputs=int(num_units/2), activation_fn=tf.nn.relu)
@@ -90,6 +93,7 @@ def make_env(scenario_name, arglist, benchmark=False):
         env = MultiAgentEnv(arglist, world, scenario.reset_world, scenario.reward, scenario.observation, scenario.benchmark_data)
     else:
         env = MultiAgentEnv(arglist, world, scenario.reset_world, scenario.reward, scenario.observation)
+
     #this will multi agent environment as output
     return env
 #now get the trainers required for training the environment
@@ -111,8 +115,9 @@ def train(arglist, learning_type = 'maddpg'):
         obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
         #trainer of  learning of type maddpg and ddpg
         trainers = get_trainers(env, obs_shape_n, learning_type)
+        ddpgtrainers = get_trainers(env, obs_shape_n,'ddpg')
         #using policy based on the type of algorithm
-        print('Policy used for training{}'.format( learning_type))
+        print('Policy used for training {}'.format( learning_type))
         # Initialize
         U.initialize()
         # Load previous results saved in the directory
@@ -124,16 +129,17 @@ def train(arglist, learning_type = 'maddpg'):
         #train steps for the agents
         train_step = 0
         #store the loss of the agent
-        loss_store = []
+        agent_loss_store = []
         #storeing the reward for each agent in array
         Reward_all =[]
+        Reward_ddpg=[]
         #this will save the tensorflow training model
         saver = tf.train.Saver()
         episode = 0
         #getting delays for the reward
         delay_mean = []
         delay_max = []
-        #getting mean of the delays for the rewards for the agent
+        #getting mean of the delays for the rewards for the agent for the task offloading
         delay_fix_mean = []
         delay_fix_max = []
         Changed_number =[]
@@ -148,16 +154,16 @@ def train(arglist, learning_type = 'maddpg'):
         delay_group_max_fix =[]
         #testing in group for the delay
         delay_in_group_test = []
-        #delay for one vehicle in range of server
-        delay_one_agent=[]
+        #delay for one vehicle in range of server # for the task offloading
+        delay_one_agent =[]
         delay_one_agent_max =[]
         delay_one_agent_mean = []
-
+        #delay in the group for the task offloading
         Delay_group_last =[]
         Delay_in_group =[]
-        l_a=5
-        l_a_r=100
-        Tdelay=l_a/l_a_r
+        #l_a=5
+        #l_a_r=100
+        #Tdelay=l_a/l_a_r
 
         rho = []
 
@@ -197,7 +203,7 @@ def train(arglist, learning_type = 'maddpg'):
                     delay_fix_mean.append(np.mean(env.world.delay_fix))
                     delay_fix_max.append(np.max(env.world.delay_fix))
                     delay_group_mean_fix.append(np.mean(env.world.delay_in_group_fix))
-                    #getting the total group delay from the world class
+                    #getting the total group delay from the env world for the offloading of the task
                     delay_group_mean_load_fix.append(np.sum(env.world.delay_in_group_fix*env.world.load_group)/np.sum(env.world.load_group))
                     delay_group_max_fix.append(np.max(env.world.delay_in_group_fix ))
                     #gettig delay for each agent
@@ -224,12 +230,12 @@ def train(arglist, learning_type = 'maddpg'):
                     loss = agent.update(trainers, train_step)
                     if loss != None:
                         print("Updated loss is: {}".format(loss[1]))
-                        loss_store.append(loss[1])
+                        agent_loss_store.append(loss[1])
                         print("Loss of Critic supporting actor {}".format(loss[0]))
             #appending each episode
             episode += 1
             if episode>0.3*arglist.num_episodes and episode%500==0:
-                plot_implot(arglist, Reward_all, None, None, arglist.step_num, arglist.Group_traffic, "Reward received")
+                plot_implot(arglist, Reward_all, None, None, arglist.step_num, arglist.Group_traffic, "Received Reward")
 
         U.save_state(arglist.data_dir, saver=saver)
     #now if the learning type is maddpg
@@ -238,14 +244,14 @@ def train(arglist, learning_type = 'maddpg'):
                 Changed_number, changed_group_num_all, delay_group_mean_ma,
                 delay_group_mean_fix, delay_group_mean_load_ma, delay_group_mean_load_fix,
                 delay_group_max_ma, delay_group_max_fix, delay_one_agent,
-                delay_in_group_test, Delay_group_last, Delay_in_group,
-                Tdelay, delay_one_agent_mean,delay_one_agent_max,rho)
+                delay_in_group_test, Delay_group_last, Delay_in_group, delay_one_agent_mean,delay_one_agent_max,rho)
     else:
         return (Reward_all, delay_mean, delay_max, Changed_number, changed_group_num_all,
                 delay_group_mean_ma, delay_group_mean_load_ma, delay_group_mean_load_fix,
                 delay_group_max_ma, delay_in_group_test)
-#Now testing the model by running the trainers
+#Now testing the model by running the differnt types of trainners
 def test(trainers,env, learning_type, arglist, flag):
+    #getting mean delay in the group for the task offloading
     delay_in_group_mean = np.zeros(9)
     for i in range(9):
         delay_in_group_max = np.zeros(arglist.step_num)
@@ -283,7 +289,7 @@ def plot_figure(arglist, data, y_value, INTERVAL_STEP = 600):
 
 def plot_implot(arglist, data, data2, data3, num1, num2, name, x_label ="Episode Numbers" ):
     # num1 is interval
-    a4_dims = (8, 5)
+    a4_dims = (7,5)
     plt.figure(figsize=a4_dims,edgecolor='red')
     data_new = []
     if num1>1:
@@ -304,19 +310,22 @@ def plot_implot(arglist, data, data2, data3, num1, num2, name, x_label ="Episode
     l1 = sns.tsplot(data_new, color='blue',legend = True)
 
     if data2 is not None:
-        data_new2 = []
+        comparedata = []
         if num1>1:
             for i in range(0,len(data2),num1):
-                data_new2.append(np.mean(data2[i:i+num1]))
+                comparedata.append(np.mean(data2[i:i+num1]))
         else:
-            data_new2=data2
+            comparedata=data2
         #getting the shape of new data after appending
-        data_new2 = np.reshape(data_new2[:num2*Episode],( Episode, num2)).T
-        l2 = sns.tsplot(data_new2, color='red',legend = True)
+        comparedata = np.reshape(comparedata[:num2*Episode],( Episode, num2)).T
+        l2 = sns.tsplot(comparedata, color='red',legend = True)
         if data3 is not None:
-            data_new3 = []
+            data_comp = []
             for i in range(0,len(data3),num1):
-                data_new3.append(np.mean(data3[i:i+num1]))
+                data_comp.append(np.mean(data3[i:i+num1]))
+            data_new3 = np.reshape(data_comp[:num2*Episode],( Episode, num2)).T
+            l3 = sns.tsplot(data_new3,color='green')
+            plt.legend([l1, l2, l3], labels=["MADDPG", "Distance Based", "No Mobility Maddpg"])
         else:
             plt.legend([l1,l2], labels=["MADDPG","DDPG"])
     else:
@@ -362,9 +371,27 @@ def plot_fig_one_line(data1 ,x_label, y_label, name):
     plt.xlabel(x_label)
     plt.ylabel(y_label)
     plt.savefig(arglist.plots_dir+name+ '.pdf', dpi=400)
+#comparison
+def plot_fig_three_line(data1, data2 ,data3,x_label, y_label, legend, name):
+    a4_dims = (8, 5)
+    plt.figure(figsize=a4_dims)
+    plt.plot(data1)
+    plt.plot(data2)
+    plt.plot(data3)
+    plt.legend(labels=legend)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.savefig(arglist.plots_dir+name+ '.pdf', dpi=400)
+
+def num(self):
+    n = 1
+    k = random.randint(0, 1)
+    for _ in range(n):
+        print(k)
+        return k
 
 def plot_Resource_delay(data1, data2, legend, name, max_=None):
-
+    #plotting for the resource delay
     a4_dims = (8, 5)
     plt.figure(figsize=a4_dims,edgecolor='red')
     if max_ ==None:
@@ -374,7 +401,6 @@ def plot_Resource_delay(data1, data2, legend, name, max_=None):
     else:
         dx = int(max_/50)
     X = np.arange(0, max_, dx)
-    #    data1 = np.sort(data1)
 
     y_1 = []
     y_2 = []
@@ -404,8 +430,7 @@ if __name__ == '__main__':
          Changed_number, changed_group_num_all, delay_group_mean_ma,
          delay_group_mean_fix, delay_group_mean_load_ma, delay_group_mean_load_fix,
          delay_group_max_ma, delay_group_max_fix, delay_one_agent,
-         delay_in_group_test, Delay_group_last, Delay_in_group,
-         Tdelay, delay_one_agent_mean,delay_one_agent_max,rho)= train(arglist, learning_type)
+         delay_in_group_test, Delay_group_last, Delay_in_group, delay_one_agent_mean,delay_one_agent_max,rho)= train(arglist, learning_type)
     else:
         (Reward_all, delay_mean, delay_max, Changed_number, changed_group_num_all,
          delay_group_mean_ma, delay_group_mean_load_ma, delay_group_mean_load_fix,
@@ -453,6 +478,11 @@ if __name__ == '__main__':
 
         matrix=np.array(delay_in_group_test,dtype=float)
         matrix_T=np.transpose(matrix)
+        plot_fig_three_line(delay_group_mean_ma[-num:], delay_group_mean_fix[-num:], delay_one_agent[-num:],
+                            'Time', 'Mean Delay', ["MADDPG", "Distance Based","No Mobility Maddpg"], 'Delay agaent mean')
+
+        plot_fig_three_line(delay_group_max_ma[-num:], delay_group_max_ma[-num:],delay_one_agent[-num:],
+                            'Time', 'Max Delay', ["MADDPG", "Distance Based","No Mobility Maddpg"], 'Delay agent Max')
 
 
         size = arglist.Group_traffic
@@ -462,19 +492,20 @@ if __name__ == '__main__':
         n_new =np.mean( np.reshape(changed_group_num_all[-num*size:],(int(len(changed_group_num_all[-num*size:])/num),num)),0)
         plot_fig_one_line(n_new ,'Time', 'Changed groups', 'Change Groups')
 
-        #Now plotting resource delay graph for the edge server
+        #Now plotting resource delay graph for the edge server for the tasks
         import itertools
         data1 = list(itertools.chain(*Delay_in_group[-num*7:]))
         data2 = list(itertools.chain(*Delay_group_last[-num*7:]))
         a1 = [i for i in data1 if i>0.1]
         a2 = [i for i in data2 if i>0.1]
 
-        plot_Resource_delay(np.array(a1), np.array(a2), [ "Re-assign","Last"], 'Resource  Assign Delay', 42)
+        #  plot_Resource_delay(np.array(a1), np.array(a2), [ "Re-assign","Last"], 'Resource  Assign Delay', 42)
 
-        #plot dor time and the rho for the delay
+        #plot for time and the rho for the delay
         plot_fig_one_line(rho[-num:],'time', 'rho', 'delay -rho')
     else:
         #else plot reward against episode graph
-        plot_fig_one_line(Reward_all[0:-1:10] ,'Episode Number', 'Reward received', 'reward')
+        plot_fig_one_line(Reward_all[0:-1:10] ,'Episode Number', 'Received Reward', 'Reward')
     #give the time cost for the delay in resource allocation
     print("Time cost in min: " + str(round((time.time()-t_start)/60/60, 2)))
+

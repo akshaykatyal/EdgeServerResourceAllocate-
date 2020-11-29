@@ -1,31 +1,41 @@
+#import of all the necessary libraries
 import numpy as np
 from multiagent.core import World,Agent, Vehicle
 from multiagent.scenario import BaseScenario
 import json
 import networkx as nx
-import math
 
-#dic1= '/Users/aditykatyal/download/GitHub/IOV_DATA/IOV_DATA/'
-#bus data rio
-#creating groups of vehicles as in the paper
-l_a = 10 # packets/ms, lower-bound of arriving rate of vehicles of G1
-l_b = 30 #upper bound of packets for Group1
-l_a_r = 100 # packets/ms of edge server
+import math
+#size of the map of the environment
+size_map = 1000/2000
+# tasks/ms, this is the lower bound of the task arriving rate
+l_a = 10
+#upper bound of task arrivig rate for group 1
+l_b = 30
+#number of task by the server 100 tasks/ms
+l_a_r = 100
+#tasks in the q size
 l_b_r = 200# packets of Q size
-remote_delay_max = 8 #ms
+#max delay
+remote_delay_max = 8
+#qlength=200
 Qlength = 200
+#frequency of the cell is 2.8ghz
+fc=2800 #frequency of cell is 2.8ghz
+Bandwidth=60 #60mhz bandwidth
+gaussianpower=-95 # gaussianmoise is -95dbm
 #transmission delay for teh edge server
 #Tdelay=l_a/l_a_r
 
 #creating a class for scenario
 class Scenario(BaseScenario):
-    #function to make world
+    #function to make world for the scenario environment
     def make_world(self, arglist, groupnum = None):
         world = World()
         world.collaborative = True
         # adding agenets to world
         world.agents = [Agent() for i in range(world.agent_num )]
-        #random position of the agents
+        #random position of the agents of the agents
         position = (np.array([(38, 29),(40, 70),(56, 34),(72.4, 73.3)])/(100/world.region_W))
         for i, agent in enumerate(world.agents):
             agent.id = i
@@ -34,18 +44,17 @@ class Scenario(BaseScenario):
             agent.pos = tuple(position[i])
         #set the edge serve rate in the world
         world.set_server_rate()
-        #set the crossover between the groups
+        #set the crossover between the groups in the edge server environment
         world.get_crossover()
         #set the action dimentions for agent in world
         world.set_action_dim()
-
-        world.set_topo(arglist.MATRIX_TOPOLOGY_dir)
+        #getting the coordinates of the edge
+        world.set_coord(arglist.Coordinates_Edge_dir)
 
         #getting delays in the world
         self.get_delay_group(world)
         # get delay of cross group between agents, when vehcle cross the groups
         self.get_cross_group_delay(world)
-        self.Process_delay(world)
 
         # make initial conditions
         self.reset_world(world, -1, 0, arglist)
@@ -53,7 +62,7 @@ class Scenario(BaseScenario):
             agent.state.v_manage = agent.distance_manage
         #handling handover
         self.Handover = arglist.Handover
-        #observation of queue
+        #observation of queue in the edge server
         self.Que_obs = arglist.Que_obs
         #group traafic nmber of vehicles
         self.Group_traffic = arglist.Group_traffic
@@ -63,20 +72,22 @@ class Scenario(BaseScenario):
         self.Step_observation = arglist.Step_observation
         self.reward_maddpg = arglist.reward_maddpg
         return world
-    #Function to reset the environment world
+
+        #Function to reset the environment world
     def reset_world(self, world, train_step, step, arglist, IF_test=False, TEST_V=None):
-        # load of each block in region_H * region_W
+        # load of each block in height and width of the region
         if train_step > - 1:
             # getting the vehcle location from the bus dataset
             self.get_location_vehicle(world, train_step, step, arglist.vehicle_data_dir)
         else:
             #else generate vehicle function is used for getting the position
             self.generate_vehicle(world)
+
         self.Q_type = arglist.Q_type
-        #service rate
+        #service rate for the taks in the server
         self.service_rate =[]
         for agent in world.agents:
-            #this is is
+            #this is appending of the service rate for the edge server tasks
             self.service_rate.append(agent.service_rate)
         for agent in world.agents:
             load_agent = []
@@ -97,7 +108,7 @@ class Scenario(BaseScenario):
             agent.state.c_load = agent_load
 
             diff_agent_load = []
-            # get load of fix group
+            # get load of fix group covered by the server
             diff_value = sorted(list(set(agent.group).difference(set(list_value))))
             for i in range(len(diff_value)):
                 load = world.load_group[diff_value[i]]
@@ -109,9 +120,10 @@ class Scenario(BaseScenario):
         # get delay of each group based on centalised controller
         world.centralized_Delay = self.get_delay_centralized(world)
 
-    #function for propagation distance based delay
+    #function for propagation distance based delay for the eedge server resource allocation
     def propagation_distance_based_delay(self, world):
         Q_delay_fix= self.get_latency_server_fix(world, np.array(self.service_rate))
+
         delay_in_group_fix = self.get_latency_group(world, Q_delay_fix, world.distance_assign_matrix)
         delay_agent_fix = np.zeros(world.agent_num)
         for i, agent in  enumerate(world.agents):
@@ -120,28 +132,37 @@ class Scenario(BaseScenario):
                 delay_agent_fix[i] =0
             else:
                 delay_agent_fix[i]=np.sum(load_agent*delay_in_group_fix)/np.sum(load_agent)
-
+        #the agent and group delay in the server
         world.delay_fix = delay_agent_fix
         world.delay_in_group_fix = delay_in_group_fix
 
+
+    # now we get the centralised value of the delay for the edge server
     def get_delay_centralized(self,world):
         load_c =np.sum(world.load_group)
+        # tdelay=self.Transmssion_delay(world)
         if self.Q_type == "inf":
             Q_delay_one_agent = self.delay_Queue_inf(load_c, np.sum(np.array(self.service_rate)), fix_load_server=0)
+            #  pdelay_one_agent=self.process_delay(world)
+            tdelay_one_agent=self.Transmission_delay(world)
         else:
             Q_delay_one_agent = self.delay_Queue(load_c, np.sum(np.array(self.service_rate)), world.agent_num*Qlength, fix_load_server=0)
+            #            pdelay_one_agent=self.process_delay(world)
+            tdelay_one_agent=self.Transmission_delay(world)
         n = len(world.vehicles)/1200
-        delay_group_centralzed_agent = max(2,min(remote_delay_max, n*remote_delay_max)) + Q_delay_one_agent + 1.3
+        delay_group_centralzed_agent = max(2,min(remote_delay_max, n*remote_delay_max)) + Q_delay_one_agent + +tdelay_one_agent+ 1.3 #  pdelay_one_agent
 
         return delay_group_centralzed_agent
 
     def reward(self, world, learning_type = 'maddpg'):
-
+        #TRANSMISSION DELAY
+        tdelay_group=self.Transmission_delay(world)
+        #number of vehicles changed in the server
         changed_num_vehicle = np.zeros(world.agent_num)
         changed_group_num = np.zeros(world.agent_num)
         Q_delay=np.zeros(world.agent_num)
         hand_over = np.zeros(world.agent_num)
-
+        #GETTING Q DELAY
         for i, agent in  enumerate(world.agents):
             Q_delay[i]= self.get_latency_one_agent(agent, world, np.array(self.service_rate[i]))
 
@@ -170,9 +191,10 @@ class Scenario(BaseScenario):
         delay_in_group = self.get_latency_group(world, Q_delay, world.all_con_group)
         Changed_percentage_all = np.sum(changed_num_vehicle)/sum(sum(world.vehicle_num))
         delay_agent = np.zeros(world.agent_num)
-        #
+        #pdelay calculate
         for i, agent in  enumerate(world.agents):
             load_agent = world.agent_group_cover[i,:,:]*world.load_group
+            pdelay=self.Process_delay(np.array(self.service_rate[i]),world)
             if np.sum(load_agent) <=0:
                 delay_agent[i] =0
             elif self.Handover:
@@ -186,31 +208,31 @@ class Scenario(BaseScenario):
         else:
             reward_real =  - np.max(delay_in_group)/30
         if learning_type == 'maddpg':
-            pdelay=self.Process_delay(world)
-            tdelay=self.Transmssion_delay(world)
-            reward = - delay_agent/30 + pdelay/30 + tdelay/30
+            #adding of the delay
+            reward = - delay_agent/30 + tdelay_group/30 + pdelay/30
+
         elif self.reward_maddpg:
             reward = reward_real
         else:
-            pdelay=self.Process_delay(world)
-            tdelay=self.Transmssion_delay(world)
-            reward =  - delay_agent/30 + pdelay/30 + tdelay/30
-
+            reward =  - delay_agent/30
 
         world.delay_ma = delay_agent
+        #returning the reard of the agent
         return (reward, Changed_percentage_all,
                 np.sum(changed_group_num)/world.cross_group_num, delay_in_group, reward_real)
 
+    #getting the latency in the group for the edge servers
     def get_latency_group(self, world, Q_delay, agent):
         delay_in_group = np.zeros([world.region_W, world.region_H])
+        tdelay_group=self.Transmssion_delay(world)
         for x in range(world.region_W):
             for y in range(world.region_H):
                 if agent[x,y]>0:
                     i = int(agent[x,y])-1
-                    delay_in_group[x,y] = Q_delay[i] + world.group_delay[i,x,y]
+                    delay_in_group[x,y] = Q_delay[i] + world.group_delay[i,x,y] + tdelay_group
         return delay_in_group
 
-    def get_propagate_delay_all(self, world):
+    def get_delay_all(self, world):
         latency_p=np.zeros([world.agent_num, world.num_v])
         for j, vehicle in enumerate(world.vehicles):
             dists = [np.sqrt(np.sum(np.square(world.router_pos[node] - vehicle.pos))) for node in list(world.topo_matrix.node)]
@@ -222,34 +244,35 @@ class Scenario(BaseScenario):
 
     def get_latency_one_agent(self, agent, world, service_rate):
         #  latency of agent based on Small group
-
+        pdelay_one_agent=self.process_delay(world)
+        #  tdelay_one_agent=self.Transmission_delay(world)
         agent_load_vector = agent.state.c_load * agent.state.v_manage
         load_all_cross = np.sum(agent_load_vector)
         #getting the value of q delay
         if self.Q_type == "inf":
-            Q_delay = self.delay_Queue_inf(load_all_cross, service_rate, agent.state.fix_load)
-            pdelay=self.Process_delay(world)
-            tdelay=self.Transmssion_delay(world)
+            Q_delay = self.delay_Queue_inf(load_all_cross, service_rate, agent.state.fix_load) + pdelay_one_agent
         else:
-            Q_delay = self.delay_Queue(load_all_cross, service_rate, Qlength, agent.state.fix_load)
-            pdelay=self.Process_delay(world)
-            tdelay=self.Transmssion_delay(world)
-        return Q_delay+ pdelay+tdelay
+            Q_delay = self.delay_Queue(load_all_cross, service_rate, Qlength, agent.state.fix_load) + pdelay_one_agent
+        return Q_delay
 
 
 
     def get_latency_server_fix(self, world, service_rate):
         # latency of agent based on Small groups
         Q_delay = np.zeros(world.agent_num)
+        # pdelay=self.process_delay(world)
+
         for i, agent in  enumerate(world.agents):
             agent_load_vector = agent.state.c_load * agent.distance_manage
             load_all_cross = np.sum(agent_load_vector)
-
             if self.Q_type == "inf":
                 Q_delay[i] = self.delay_Queue_inf(load_all_cross, service_rate[i], agent.state.fix_load)
+            # tdelay=self.Transmission_delay(world)#+pdelay
             else:
                 Q_delay[i] = self.delay_Queue(load_all_cross, service_rate[i], Qlength, agent.state.fix_load)
-        return Q_delay
+            # tdelay=self.Transmission_delay(world)#+pdelay
+        #getting the Q delay as server has a queue
+        return Q_delay #+tdelay #+ pdelay
 
     #function to get q delay
     def delay_Queue_inf(self, load_server, service_rate, fix_load_server=0):
@@ -259,7 +282,7 @@ class Scenario(BaseScenario):
         K = Qlength
         rho = lamda/mu
         if mu > lamda:
-            delay = min(40, 1/(mu-lamda))
+            delay = min(35, 1/(mu-lamda))
         else:
             delay = 40
         return delay
@@ -294,7 +317,7 @@ class Scenario(BaseScenario):
             delay=d
         return delay
 
-
+    #function for the observation of the server, world and the agent steps
     def observation(self, agent, world, step):
         load_group = list(map(lambda x:x/10, agent.state.c_load))
         obs = np.concatenate(([agent.state.fix_load/10], load_group), axis=0)
@@ -303,9 +326,10 @@ class Scenario(BaseScenario):
         if self.Handover:
             obs =np.concatenate((obs, agent.state.v_manage*agent.state.c_load/10), axis=0)
         if self.Que_obs:
-            obs =np.concatenate((obs,[agent.state.Q_delay/50] ), axis=0)
+            obs =np.concatenate((obs,[agent.state.Q_delay/40] ), axis=0)
         return obs
-    #generation of load for the servers by vehicle
+
+    #generation of load for the servers by vehicle for a given range
     def generate_vehicle(self, world):
         # number of vehicles
         world.num_v = np.random.randint(50, high=120)
@@ -335,18 +359,18 @@ class Scenario(BaseScenario):
         with open(dic+'edge.json','r') as f:
             edge_dic = json.load(fp=f)
 
-
+        #getting the locaton of the vehicles
         location = diction[str(step)]
-        # number of vehicles
+        # number of vehicles are returned
         world.num_v = len(location)
         # adding vehicles to server
         world.vehicles = [Vehicle() for i in range(world.num_v)]
-        #load for group 1
+        #load for group 1 in the edge server
         self.load = (np.array(location)[:,2]-10)*(l_b-l_a)/10+l_a
 
         world.load_group = np.zeros([world.region_W, world.region_H] )
         world.vehicle_num = np.zeros([world.region_W, world.region_H] )
-
+        #getting the vehicles from the file and loading in the group for the tasks
         for j, vehicle in enumerate(world.vehicles):
             x = location[j][0]/(100/world.region_W)
             y = location[j][1]/(100/world.region_H)
@@ -356,7 +380,7 @@ class Scenario(BaseScenario):
             world.vehicle_num[int(x),int(y)]+=1
 
 
-        #load on the edge servers
+        #load on the edge servers based on the rate of the server
         for u in range(len(edge_dic)):
             x = edge_dic[u][0]/(100/world.region_W)
             y= edge_dic[u][1]/(100/world.region_H)
@@ -365,9 +389,8 @@ class Scenario(BaseScenario):
             edge_load =min(max(l_a_r,load),l_b_r)
             world.load_group[int(x),int(y)] += edge_load/1000
 
-    #
+    # function t create test vehicles for the edge server
     def test_vehicle_data(self, world,test_num):
-
         vehicles = []
         for k in range(test_num):
             num_v = np.random.randint(50, high=120)
@@ -382,7 +405,7 @@ class Scenario(BaseScenario):
             vehicles.append(vehicle)
         return vehicles
 
-
+    #this function is used to get the group based delay
     def get_delay_group(self, world):
         world.group_delay = np.zeros([world.agent_num, world.region_W, world.region_H])
         for i, agent in enumerate(world.agents):
@@ -398,7 +421,7 @@ class Scenario(BaseScenario):
                         delay = (0.1 +dis*0.01/3)*2 + 1
                     world.group_delay[i, x, y] = delay
 
-    #get delay in crossing groups between edge server
+    #get delay in vehicles crossing groups between edge server
     def get_cross_group_delay(self, world):
 
         world.distance_assign_matrix = world.all_con_group.copy()
@@ -423,37 +446,74 @@ class Scenario(BaseScenario):
                     if distance <= agent.r:
                         tmp = world.group_delay[:,x,y]
                         world.agent_group_cover[agent.id,x,y] = 1
-    def Process_delay(self,world):
-        service_rate=[]
-        for agent in world.agents:
-            #this is is
-            service_rate.append(agent.service_rate)
+
+    #Function for getting the data rate based on the parameters
+    def datarate(self):
+        path_loss=32.4+20*math.log10(fc)+31.9*math.log10(size_map)#this is the path loss as mentioned in the paper
+        path=path_loss/10
+        Power=100 #packets/ms, The transmit power of the server
+        datarate=Bandwidth*math.log2(1+ (Power * pow(10,-path)/gaussianpower))
+        return datarate
+    # #function to ge the process delay
+    # # def process_delay(self, world):
+    # #     mu=1000
+    # #     pro=[]
+    # #     for agent in world.agents:
+    # #         load_agent = []
+    # #         all_group_agent = agent.group
+    # #         for i in range(len(all_group_agent)):
+    # #             load = world.load_group[all_group_agent[i]]
+    # #             load_agent.append(load)
+    # #         #for i in mu:
+    # #         #  if mu[i] == 0:
+    # #         #   pro_delay = 0
+    # #         # else:
+    # #         for agent in load_agent:
+    # #             pro_delay = agent/mu
+    # #     return pro_delay
+    #
+    # #    #
+    # function for getting the process delay
+    def Process_delay(self,servicerate, world):
+        mu=servicerate
         for agent in world.agents:
             load_agent = []
             all_group_agent = agent.group
             for i in range(len(all_group_agent)):
                 load = world.load_group[all_group_agent[i]]
                 load_agent.append(load)
-            #get load of agent in all its coverage groups
-            agent.state.load = load_agent
-            for a in agent.state.load:
-                prodelay=a/10
+            for a in load_agent:
+                prodelay=a/mu
         return prodelay
-    def Transmssion_delay(self,world):
-        mu=10
-        for agent in world.agents:
-            load_agent = []
-            all_group_agent = agent.group
-            for i in range(len(all_group_agent)):
-                load = world.load_group[all_group_agent[i]]
-                load_agent.append(load)
-            #get load of agent in all its coverage groups
-            agent.state.load = load_agent
-            for a in agent.state.load:
-                tdelay=a/mu
-
+    # #function for getting transmission delay
+    # # def Transmssion_delay(self,world):
+    # #     rate=100
+    # #     for agent in world.agents:
+    # #         load_agent = []
+    # #         all_group_agent = agent.group
+    # #         for i in range(len(all_group_agent)):
+    # #             load = world.load_group[all_group_agent[i]]
+    # #             load_agent.append(load)
+    # #         for a in load_agent:
+    # #             tdelay=a/rate
+    # #     return tdelay
+    def Transmission_delay(self,world):
+        load_c =np.sum(world.load_group)
+        rate=self.datarate()
+        tdelay= load_c/rate
         return tdelay
-
+    #function for getting the total delay in the resource allocation environment
+    def Totaldelay(self, world):
+        propgation=self.propagation_distance_based_delay(world)
+        trans=self.Transmission_delay(world)
+        qdelay = np.zeros(world.agent_num)
+        for i, agent in enumerate(world.agents):
+            agent_load_vector = agent.state.c_load * agent.distance_manage
+            load_all_cross = np.sum(agent_load_vector)
+            pdelay=self.Process_delay(np.array(self.service_rate[i]),world)
+            qdelay[i]= self.delay_Queue(load_all_cross, np.array(self.service_rate[i]), Qlength, agent.state.fix_load)
+        totaldelay=propgation+max(trans,qdelay)+pdelay
+        return totaldelay
 
 
 
